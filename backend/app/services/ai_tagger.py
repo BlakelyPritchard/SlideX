@@ -93,8 +93,8 @@ class AITagger:
     async def _generate_with_openai(self, content: str) -> Dict[str, List[str]]:
         """Generate tags using OpenAI API"""
         try:
-            import openai
-            openai.api_key = self.openai_key
+            from openai import OpenAI
+            client = OpenAI(api_key=self.openai_key)
             
             prompt = f"""Analyze this presentation slide and categorize it with relevant tags.
 
@@ -111,7 +111,7 @@ Return ONLY a JSON object with these category keys and arrays of tag strings. Ke
 Example: {{"client_painpoint": ["data security"], "client_type": ["enterprise"], "software_type": ["CRM"], "software_function": ["reporting"]}}
 """
             
-            response = openai.ChatCompletion.create(
+            response = client.chat.completions.create(
                 model="gpt-3.5-turbo",
                 messages=[
                     {"role": "system", "content": "You are a helpful assistant that categorizes presentation slides."},

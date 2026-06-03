@@ -57,19 +57,23 @@ async def upload_presentation(
                 title=slide_data.get("title")
             )
             db.add(slide)
-            db.flush()  # Get the slide ID
+            db.commit()  # Commit slide first to ensure it's in the database
+            db.refresh(slide)  # Refresh to get the ID and ensure it's in session
             
             # Generate and assign tags
             tags = await ai_tagger.generate_tags(slide_data["text_content"], slide_data.get("title", ""), db)
-            slide.tags = tags
+            
+            # Link tags to slide
+            for tag in tags:
+                slide.tags.append(tag)
+            
+            db.commit()  # Commit the tag relationships
             
             created_slides.append({
                 "id": slide.id,
                 "slide_number": slide.slide_number,
                 "thumbnail_path": slide.thumbnail_path
             })
-        
-        db.commit()
         
         # Clean up temp file
         os.remove(temp_path)
