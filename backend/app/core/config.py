@@ -16,7 +16,8 @@ class Settings(BaseSettings):
     ANTHROPIC_API_KEY: str = ""
     ROO_API_KEY: str = ""  # Roo (Bob) API
     ROO_API_URL: str = "https://api.roo.ai/v1"  # Default Roo API endpoint
-    WATSONX_API_KEY: str = ""  # IBM WatsonX.ai
+    WATSONX_IAM_API_KEY: str = ""  # IBM Cloud IAM API Key (recommended)
+    WATSONX_ACCESS_TOKEN: str = ""  # IBM WatsonX.ai Access Token (alternative, expires in 1 hour)
     WATSONX_PROJECT_ID: str = ""  # IBM WatsonX project ID
     WATSONX_URL: str = "https://us-south.ml.cloud.ibm.com"  # Default WatsonX endpoint
     

@@ -30,6 +30,17 @@ async def upload_presentation(
     if not file.filename.endswith(('.pptx', '.ppt')):
         raise HTTPException(status_code=400, detail="Only PowerPoint files (.pptx, .ppt) are allowed")
     
+    # Check for duplicate filename
+    existing_slides = db.query(Slide).filter(
+        Slide.original_filename == file.filename
+    ).count()
+    
+    if existing_slides > 0:
+        raise HTTPException(
+            status_code=409,
+            detail=f"File '{file.filename}' already uploaded ({existing_slides} slides exist). Please delete existing slides first or rename the file."
+        )
+    
     try:
         # Initialize processors
         slide_processor = SlideProcessor()
@@ -43,6 +54,7 @@ async def upload_presentation(
         
         # Process the presentation
         slides_data = await slide_processor.process_presentation(temp_path, file.filename)
+        total_slides = len(slides_data)
         
         # Store slides in database and generate tags
         created_slides = []
@@ -60,8 +72,15 @@ async def upload_presentation(
             db.commit()  # Commit slide first to ensure it's in the database
             db.refresh(slide)  # Refresh to get the ID and ensure it's in session
             
-            # Generate and assign tags
-            tags = await ai_tagger.generate_tags(slide_data["text_content"], slide_data.get("title", ""), db)
+            # Generate and assign tags (include filename and slide position for better tagging)
+            tags = await ai_tagger.generate_tags(
+                slide_data["text_content"],
+                slide_data.get("title", ""),
+                db,
+                filename=file.filename,
+                slide_number=slide_data["slide_number"],
+                total_slides=total_slides
+            )
             
             # Link tags to slide
             for tag in tags:
@@ -102,6 +121,7 @@ async def get_all_slides(
                 "id": slide.id,
                 "original_filename": slide.original_filename,
                 "slide_number": slide.slide_number,
+                "image_path": slide.image_path,
                 "thumbnail_path": slide.thumbnail_path,
                 "title": slide.title,
                 "tags": [{"name": tag.name, "category": tag.category} for tag in slide.tags]

@@ -3,7 +3,8 @@ AI Tagging service
 Uses OpenAI or Anthropic to automatically tag slides
 """
 import json
-from typing import List, Dict
+from typing import List, Dict, Optional
+from datetime import datetime, timedelta
 from app.core.config import settings
 from app.core.database import SessionLocal
 from app.models.tag import Tag
@@ -17,36 +18,50 @@ class AITagger:
         self.anthropic_key = settings.ANTHROPIC_API_KEY
         self.roo_key = settings.ROO_API_KEY
         self.roo_url = settings.ROO_API_URL
-        self.watsonx_key = settings.WATSONX_API_KEY
+        self.watsonx_iam_key = settings.WATSONX_IAM_API_KEY
+        self.watsonx_access_token = settings.WATSONX_ACCESS_TOKEN
         self.watsonx_project_id = settings.WATSONX_PROJECT_ID
         self.watsonx_url = settings.WATSONX_URL
         self.categories = [
             "client_painpoint",
             "client_type",
             "software_type",
-            "software_function"
+            "software_function",
+            "slide_type"
         ]
+        # Token caching for WatsonX
+        self._cached_token: Optional[str] = None
+        self._token_expiry: Optional[datetime] = None
     
-    async def generate_tags(self, text_content: str, title: str, db=None) -> List[Tag]:
+    async def generate_tags(self, text_content: str, title: str, db=None, filename: str = "", slide_number: int = 0, total_slides: int = 0) -> List[Tag]:
         """
-        Generate tags for a slide based on its content
+        Generate tags for a slide based on its content, filename, and position
         Returns list of Tag objects
         """
-        # Combine title and content for analysis
-        full_content = f"Title: {title}\n\nContent: {text_content}"
+        # Combine filename, title and content for analysis
+        full_content = f"Filename: {filename}\n\nTitle: {title}\n\nContent: {text_content}"
         
-        # Generate tags using AI (priority order)
-        if self.openai_key:
+        # Determine slide type based on position and content
+        slide_type = self._determine_slide_type(slide_number, total_slides, title, text_content)
+        
+        # Generate tags using AI (priority order: WatsonX first for enterprise use)
+        if (self.watsonx_iam_key or self.watsonx_access_token) and self.watsonx_project_id:
+            tag_suggestions = await self._generate_with_watsonx(full_content)
+        elif self.openai_key:
             tag_suggestions = await self._generate_with_openai(full_content)
         elif self.anthropic_key:
             tag_suggestions = await self._generate_with_anthropic(full_content)
         elif self.roo_key:
             tag_suggestions = await self._generate_with_roo(full_content)
-        elif self.watsonx_key:
-            tag_suggestions = await self._generate_with_watsonx(full_content)
         else:
             # Fallback: basic keyword extraction
             tag_suggestions = self._generate_basic_tags(full_content)
+        
+        # Always add slide type tag based on position
+        if slide_type and "slide_type" not in tag_suggestions:
+            tag_suggestions["slide_type"] = []
+        if slide_type:
+            tag_suggestions["slide_type"].append(slide_type)
         
         # Get or create tags in database
         if db is None:
@@ -209,42 +224,89 @@ Return ONLY a JSON object with these category keys and arrays of tag strings.
             print(f"Roo API error: {e}")
             return self._generate_basic_tags(content)
     
+    async def _get_watsonx_token(self) -> str:
+        """
+        Get WatsonX access token using IAM API key.
+        Implements token caching and automatic refresh as per IBM documentation:
+        https://www.ibm.com/docs/en/watsonx/saas?topic=code-coding-deploying-ai-services-manually
+        """
+        # If we have a manual access token, use it
+        if self.watsonx_access_token:
+            return self.watsonx_access_token
+        
+        # Check if cached token is still valid (with 5 min buffer)
+        if self._cached_token and self._token_expiry:
+            if datetime.now() < self._token_expiry - timedelta(minutes=5):
+                return self._cached_token
+        
+        # Get new token from IAM
+        import requests
+        
+        iam_url = "https://iam.cloud.ibm.com/identity/token"
+        headers = {
+            "Content-Type": "application/x-www-form-urlencoded",
+            "Accept": "application/json"
+        }
+        data = {
+            "grant_type": "urn:ibm:params:oauth:grant-type:apikey",
+            "apikey": self.watsonx_iam_key
+        }
+        
+        response = requests.post(iam_url, headers=headers, data=data, timeout=10)
+        response.raise_for_status()
+        
+        token_data = response.json()
+        self._cached_token = token_data["access_token"]
+        # Tokens expire in 1 hour (3600 seconds)
+        self._token_expiry = datetime.now() + timedelta(seconds=token_data.get("expires_in", 3600))
+        
+        return self._cached_token
+    
+    
     async def _generate_with_watsonx(self, content: str) -> Dict[str, List[str]]:
-        """Generate tags using IBM WatsonX.ai API"""
+        """Generate tags using IBM WatsonX.ai API with Llama-3.3-70B"""
         try:
             import requests
             
-            prompt = f"""Analyze this presentation slide and categorize it with relevant tags.
+            # Get access token (automatically refreshes if needed)
+            access_token = await self._get_watsonx_token()
+            
+            # Optimized prompt for Llama-3.3-70B
+            system_prompt = """You are an expert at categorizing presentation slides for a sales team. Analyze slides and assign specific, relevant tags in 5 categories:
 
-Slide Content:
+1. client_painpoint: Business problems addressed (e.g., cost_reduction, data_security, identity_management, compliance, scalability, integration_challenges)
+2. client_type: Target organization type (e.g., enterprise, SMB, government, healthcare, financial_services, manufacturing)
+3. software_type: Software category (e.g., Maximo, Tririga, Verify, Value360, CRM, ERP, analytics, automation)
+4. software_function: Specific capabilities (e.g., asset_management, facility_management, identity_verification, reporting, monitoring, integration, dashboard)
+5. slide_type: Presentation structure (e.g., title_slide, agenda, content, feature_highlight, demo, case_study, closing_slide)
+
+Return ONLY valid JSON with these exact category keys and arrays of concise tag strings (1-3 words each)."""
+
+            user_prompt = f"""Analyze this slide and provide tags:
+
 {content}
 
-Provide tags in these categories:
-1. client_painpoint: What business problems does this address?
-2. client_type: What type of organization is this for?
-3. software_type: What category of software?
-4. software_function: What specific capabilities?
-
-Return ONLY a JSON object with these category keys and arrays of tag strings.
-Example: {{"client_painpoint": ["data security"], "client_type": ["enterprise"], "software_type": ["CRM"], "software_function": ["reporting"]}}
-"""
+Return JSON format:
+{{"client_painpoint": ["tag1", "tag2"], "client_type": ["tag1"], "software_type": ["tag1"], "software_function": ["tag1", "tag2"], "slide_type": ["tag1"]}}"""
             
-            # WatsonX authentication
+            # WatsonX authentication with access token
             headers = {
-                "Authorization": f"Bearer {self.watsonx_key}",
+                "Authorization": f"Bearer {access_token}",
                 "Content-Type": "application/json",
                 "Accept": "application/json"
             }
             
+            # Use Llama-3.3-70B model
             payload = {
-                "input": prompt,
-                "model_id": "ibm/granite-13b-chat-v2",  # Or another WatsonX model
+                "input": f"<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\n{system_prompt}<|eot_id|><|start_header_id|>user<|end_header_id|>\n\n{user_prompt}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n",
+                "model_id": "meta-llama/llama-3-3-70b-instruct",
                 "project_id": self.watsonx_project_id,
                 "parameters": {
                     "max_new_tokens": 500,
-                    "temperature": 0.3,
-                    "top_p": 1,
-                    "top_k": 50
+                    "temperature": 0.2,
+                    "top_p": 0.95,
+                    "top_k": 50,
+                    "repetition_penalty": 1.1
                 }
             }
             
@@ -256,14 +318,51 @@ Example: {{"client_painpoint": ["data security"], "client_type": ["enterprise"],
             )
             response.raise_for_status()
             
-            result_text = response.json()["results"][0]["generated_text"]
-            # Extract JSON from response
+            result_text = response.json()["results"][0]["generated_text"].strip()
+            
+            # Extract JSON from response (handle potential markdown formatting)
+            if "```json" in result_text:
+                result_text = result_text.split("```json")[1].split("```")[0].strip()
+            elif "```" in result_text:
+                result_text = result_text.split("```")[1].split("```")[0].strip()
+            
             result = json.loads(result_text)
+            
+            # Validate all required categories are present
+            required_categories = ["client_painpoint", "client_type", "software_type", "software_function", "slide_type"]
+            for category in required_categories:
+                if category not in result:
+                    result[category] = []
+            
             return result
             
         except Exception as e:
             print(f"WatsonX API error: {e}")
+            import traceback
+            traceback.print_exc()
             return self._generate_basic_tags(content)
+    
+    def _determine_slide_type(self, slide_number: int, total_slides: int, title: str, text_content: str) -> str:
+        """
+        Determine the type of slide based on position and content
+        """
+        title_lower = title.lower()
+        content_lower = text_content.lower()
+        
+        # First slide is always title slide
+        if slide_number == 1:
+            return "title_slide"
+        
+        # Last slide is usually closing/thank you
+        if slide_number == total_slides:
+            return "closing_slide"
+        
+        # Check for agenda slide
+        if "agenda" in title_lower or "outline" in title_lower or "overview" in title_lower:
+            return "agenda"
+        
+        # Default to content slide
+        return "content"
     
     def _generate_basic_tags(self, content: str) -> Dict[str, List[str]]:
         """
@@ -276,12 +375,14 @@ Example: {{"client_painpoint": ["data security"], "client_type": ["enterprise"],
             "client_painpoint": [],
             "client_type": [],
             "software_type": [],
-            "software_function": []
+            "software_function": [],
+            "slide_type": []
         }
         
         # Simple keyword matching
         painpoint_keywords = {
             "security": "data security",
+            "identity": "identity",
             "scale": "scalability",
             "cost": "cost reduction",
             "efficiency": "efficiency",
@@ -294,7 +395,12 @@ Example: {{"client_painpoint": ["data security"], "client_type": ["enterprise"],
             "startup": "startup"
         }
         
+        # IBM Software Products
         software_keywords = {
+            "maximo": "Maximo",
+            "tririga": "Tririga",
+            "verify": "Verify",
+            "value360": "Value360",
             "crm": "CRM",
             "analytics": "analytics",
             "automation": "automation",
@@ -305,7 +411,8 @@ Example: {{"client_painpoint": ["data security"], "client_type": ["enterprise"],
             "report": "reporting",
             "integrate": "integration",
             "dashboard": "dashboard",
-            "analyze": "analysis"
+            "analyze": "analysis",
+            "monitor": "monitoring"
         }
         
         # Match keywords
@@ -325,7 +432,7 @@ Example: {{"client_painpoint": ["data security"], "client_type": ["enterprise"],
             if keyword in content_lower:
                 tags["software_function"].append(tag)
         
-        # Ensure at least one tag per category
+        # Ensure at least one tag per category (except slide_type which is set separately)
         if not tags["client_painpoint"]:
             tags["client_painpoint"] = ["general"]
         if not tags["client_type"]:
@@ -334,6 +441,7 @@ Example: {{"client_painpoint": ["data security"], "client_type": ["enterprise"],
             tags["software_type"] = ["general"]
         if not tags["software_function"]:
             tags["software_function"] = ["general"]
+        # slide_type is determined by position, not content, so don't add "general"
         
         return tags
 
