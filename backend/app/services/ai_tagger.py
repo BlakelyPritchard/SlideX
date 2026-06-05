@@ -3,6 +3,7 @@ AI Tagging service
 Uses OpenAI or Anthropic to automatically tag slides
 """
 import json
+import os
 from typing import List, Dict, Optional
 from datetime import datetime, timedelta
 from app.core.config import settings
@@ -22,6 +23,13 @@ class AITagger:
         self.watsonx_access_token = settings.WATSONX_ACCESS_TOKEN
         self.watsonx_project_id = settings.WATSONX_PROJECT_ID
         self.watsonx_url = settings.WATSONX_URL
+        
+        # Ollama settings
+        self.use_ollama = settings.USE_OLLAMA
+        self.ollama_base_url = settings.OLLAMA_BASE_URL
+        self.ollama_model = settings.OLLAMA_MODEL
+        self.use_ocr = settings.USE_OCR
+        
         self.categories = [
             "client_painpoint",
             "client_type",
@@ -32,8 +40,18 @@ class AITagger:
         # Token caching for WatsonX
         self._cached_token: Optional[str] = None
         self._token_expiry: Optional[datetime] = None
+        
+        # Initialize OCR if enabled
+        self._ocr_engine = None
+        if self.use_ocr and self.use_ollama:
+            try:
+                from paddleocr import PaddleOCR
+                self._ocr_engine = PaddleOCR(use_angle_cls=True, lang='en', show_log=False)
+            except Exception as e:
+                print(f"Warning: Could not initialize PaddleOCR: {e}")
+                self._ocr_engine = None
     
-    async def generate_tags(self, text_content: str, title: str, db=None, filename: str = "", slide_number: int = 0, total_slides: int = 0) -> List[Tag]:
+    async def generate_tags(self, text_content: str, title: str, db=None, filename: str = "", slide_number: int = 0, total_slides: int = 0, image_path: str = "") -> List[Tag]:
         """
         Generate tags for a slide based on its content, filename, and position
         Returns list of Tag objects
@@ -44,8 +62,10 @@ class AITagger:
         # Determine slide type based on position and content
         slide_type = self._determine_slide_type(slide_number, total_slides, title, text_content)
         
-        # Generate tags using AI (priority order: WatsonX first for enterprise use)
-        if (self.watsonx_iam_key or self.watsonx_access_token) and self.watsonx_project_id:
+        # Generate tags using AI (priority order: Ollama if enabled, then WatsonX, then others)
+        if self.use_ollama:
+            tag_suggestions = await self._generate_with_ollama(full_content, image_path)
+        elif (self.watsonx_iam_key or self.watsonx_access_token) and self.watsonx_project_id:
             tag_suggestions = await self._generate_with_watsonx(full_content)
         elif self.openai_key:
             tag_suggestions = await self._generate_with_openai(full_content)
@@ -338,6 +358,109 @@ Return JSON format:
             
         except Exception as e:
             print(f"WatsonX API error: {e}")
+            import traceback
+            traceback.print_exc()
+            return self._generate_basic_tags(content)
+    
+    async def _generate_with_ollama(self, content: str, image_path: str = "") -> Dict[str, List[str]]:
+        """
+        Generate tags using Ollama with LLaVA model + PaddleOCR
+        Combines OCR text extraction with vision model for best results
+        """
+        try:
+            import ollama
+            import base64
+            
+            # Step 1: Extract text using PaddleOCR if available and image exists
+            ocr_text = ""
+            if self._ocr_engine and image_path and os.path.exists(image_path):
+                try:
+                    result = self._ocr_engine.ocr(image_path, cls=True)
+                    if result and result[0]:
+                        ocr_text = "\n".join([line[1][0] for line in result[0]])
+                        print(f"OCR extracted {len(ocr_text)} characters from slide")
+                except Exception as e:
+                    print(f"OCR extraction failed: {e}")
+            
+            # Step 2: Combine OCR text with existing content
+            enhanced_content = content
+            if ocr_text:
+                enhanced_content = f"{content}\n\nOCR Extracted Text:\n{ocr_text}"
+            
+            # Step 3: Prepare prompt for LLaVA
+            system_prompt = """You are an expert at categorizing presentation slides for a sales team. Analyze slides and assign specific, relevant tags in 5 categories:
+
+1. client_painpoint: Business problems addressed (e.g., cost_reduction, data_security, identity_management, compliance, scalability, integration_challenges)
+2. client_type: Target organization type (e.g., enterprise, SMB, government, healthcare, financial_services, manufacturing)
+3. software_type: Software category (e.g., Maximo, Tririga, Verify, Value360, CRM, ERP, analytics, automation)
+4. software_function: Specific capabilities (e.g., asset_management, facility_management, identity_verification, reporting, monitoring, integration, dashboard)
+5. slide_type: Presentation structure (e.g., title_slide, agenda, content, feature_highlight, demo, case_study, closing_slide)
+
+Return ONLY valid JSON with these exact category keys and arrays of concise tag strings (1-3 words each)."""
+
+            user_prompt = f"""Analyze this slide and provide tags:
+
+{enhanced_content}
+
+Return JSON format:
+{{"client_painpoint": ["tag1", "tag2"], "client_type": ["tag1"], "software_type": ["tag1"], "software_function": ["tag1", "tag2"], "slide_type": ["tag1"]}}"""
+            
+            # Step 4: Call Ollama with image if available
+            if image_path and os.path.exists(image_path):
+                # Read and encode image
+                with open(image_path, 'rb') as img_file:
+                    image_data = base64.b64encode(img_file.read()).decode('utf-8')
+                
+                response = ollama.chat(
+                    model=self.ollama_model,
+                    messages=[
+                        {
+                            'role': 'system',
+                            'content': system_prompt
+                        },
+                        {
+                            'role': 'user',
+                            'content': user_prompt,
+                            'images': [image_data]
+                        }
+                    ]
+                )
+            else:
+                # Text-only mode (fallback)
+                response = ollama.chat(
+                    model=self.ollama_model,
+                    messages=[
+                        {
+                            'role': 'system',
+                            'content': system_prompt
+                        },
+                        {
+                            'role': 'user',
+                            'content': user_prompt
+                        }
+                    ]
+                )
+            
+            result_text = response['message']['content'].strip()
+            
+            # Extract JSON from response (handle potential markdown formatting)
+            if "```json" in result_text:
+                result_text = result_text.split("```json")[1].split("```")[0].strip()
+            elif "```" in result_text:
+                result_text = result_text.split("```")[1].split("```")[0].strip()
+            
+            result = json.loads(result_text)
+            
+            # Validate all required categories are present
+            required_categories = ["client_painpoint", "client_type", "software_type", "software_function", "slide_type"]
+            for category in required_categories:
+                if category not in result:
+                    result[category] = []
+            
+            return result
+            
+        except Exception as e:
+            print(f"Ollama error: {e}")
             import traceback
             traceback.print_exc()
             return self._generate_basic_tags(content)

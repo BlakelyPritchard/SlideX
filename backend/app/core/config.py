@@ -21,6 +21,12 @@ class Settings(BaseSettings):
     WATSONX_PROJECT_ID: str = ""  # IBM WatsonX project ID
     WATSONX_URL: str = "https://us-south.ml.cloud.ibm.com"  # Default WatsonX endpoint
     
+    # Open-source AI (Ollama)
+    USE_OLLAMA: bool = False  # Set to True to use Ollama instead of cloud APIs
+    OLLAMA_BASE_URL: str = "http://localhost:11434"  # Default Ollama endpoint
+    OLLAMA_MODEL: str = "llava"  # Model to use (llava, llava:13b, llava:34b)
+    USE_OCR: bool = True  # Use PaddleOCR for better text extraction
+    
     # Application
     APP_ENV: str = "development"
     DEBUG: bool = True

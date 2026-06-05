@@ -72,14 +72,15 @@ async def upload_presentation(
             db.commit()  # Commit slide first to ensure it's in the database
             db.refresh(slide)  # Refresh to get the ID and ensure it's in session
             
-            # Generate and assign tags (include filename and slide position for better tagging)
+            # Generate and assign tags (include filename, slide position, and image path for better tagging)
             tags = await ai_tagger.generate_tags(
                 slide_data["text_content"],
                 slide_data.get("title", ""),
                 db,
                 filename=file.filename,
                 slide_number=slide_data["slide_number"],
-                total_slides=total_slides
+                total_slides=total_slides,
+                image_path=slide_data["image_path"]
             )
             
             # Link tags to slide
