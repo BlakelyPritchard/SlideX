@@ -1,16 +1,28 @@
 """
 Search API endpoints
 """
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Body, HTTPException
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import or_, and_
 from typing import List, Optional
+from pydantic import BaseModel
+from pptx import Presentation
+from pptx.util import Inches
+from PIL import Image
+import os
+import tempfile
+from datetime import datetime
 
 from app.core.database import get_db
 from app.models.slide import Slide
 from app.models.tag import Tag
 
 router = APIRouter()
+
+
+class ExportRequest(BaseModel):
+    slide_ids: List[int]
 
 
 @router.get("/")
@@ -74,29 +86,92 @@ async def search_slides(
 
 @router.post("/export")
 async def export_slides(
-    slide_ids: List[int],
+    request: ExportRequest,
     db: Session = Depends(get_db)
 ):
     """
     Export selected slides as a new PowerPoint presentation
-    Returns information about the slides to be exported
+    Creates a PPTX file with the selected slides as images
     """
-    slides = db.query(Slide).filter(Slide.id.in_(slide_ids)).all()
+    # Get slides from database
+    slides = db.query(Slide).filter(Slide.id.in_(request.slide_ids)).order_by(Slide.id).all()
     
     if not slides:
-        return {"message": "No slides found", "slides": []}
+        raise HTTPException(status_code=404, detail="No slides found with the provided IDs")
     
-    return {
-        "message": f"Ready to export {len(slides)} slides",
-        "slides": [
-            {
-                "id": slide.id,
-                "original_filename": slide.original_filename,
-                "slide_number": slide.slide_number,
-                "image_path": slide.image_path
-            }
-            for slide in slides
-        ]
-    }
+    try:
+        # Create a new PowerPoint presentation
+        prs = Presentation()
+        
+        # Set slide size to standard 16:9
+        prs.slide_width = Inches(10)
+        prs.slide_height = Inches(7.5)
+        
+        # Add each slide as an image
+        for slide in slides:
+            # Use the full-size image path
+            image_path = slide.image_path
+            
+            # Check if image exists
+            if not os.path.exists(image_path):
+                print(f"Warning: Image not found for slide {slide.id}: {image_path}")
+                continue
+            
+            # Add a blank slide
+            blank_slide_layout = prs.slide_layouts[6]  # Blank layout
+            slide_obj = prs.slides.add_slide(blank_slide_layout)
+            
+            # Get image dimensions
+            img = Image.open(image_path)
+            img_width, img_height = img.size
+            img.close()
+            
+            # Calculate dimensions to fit slide while maintaining aspect ratio
+            slide_width = prs.slide_width
+            slide_height = prs.slide_height
+            
+            # Calculate scaling
+            width_ratio = slide_width / img_width
+            height_ratio = slide_height / img_height
+            scale_ratio = min(width_ratio, height_ratio)
+            
+            # Calculate final dimensions
+            final_width = int(img_width * scale_ratio)
+            final_height = int(img_height * scale_ratio)
+            
+            # Center the image
+            left = (slide_width - final_width) // 2
+            top = (slide_height - final_height) // 2
+            
+            # Add image to slide
+            slide_obj.shapes.add_picture(
+                image_path,
+                left,
+                top,
+                width=final_width,
+                height=final_height
+            )
+        
+        # Save to temporary file
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        temp_file = tempfile.NamedTemporaryFile(
+            delete=False,
+            suffix=f"_export_{timestamp}.pptx",
+            prefix="slidex_"
+        )
+        temp_file.close()
+        
+        prs.save(temp_file.name)
+        
+        # Return the file
+        return FileResponse(
+            path=temp_file.name,
+            media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            filename=f"slidex_export_{timestamp}.pptx",
+            background=None  # File will be deleted after sending
+        )
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error creating PowerPoint: {str(e)}")
 
 # Made with Bob
