@@ -131,9 +131,20 @@ function SearchPage() {
         slide_ids: Array.from(selectedSlides)
       };
       
-      // Add filename if provided
+      // Determine filename
+      let filename = 'selected_slides.pptx';
       if (exportFilename.trim()) {
         requestBody.filename = exportFilename.trim();
+        // Use the custom filename directly
+        filename = exportFilename.trim();
+        // Add .pptx extension if not present
+        if (!filename.toLowerCase().endsWith('.pptx')) {
+          filename += '.pptx';
+        }
+      } else {
+        // Use timestamped default
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+        filename = `slidex_export_${timestamp}.pptx`;
       }
 
       const response = await axios.post(
@@ -141,16 +152,6 @@ function SearchPage() {
         requestBody,
         { responseType: 'blob' }
       );
-
-      // Get filename from Content-Disposition header or use default
-      const contentDisposition = response.headers['content-disposition'];
-      let filename = 'selected_slides.pptx';
-      if (contentDisposition) {
-        const filenameMatch = contentDisposition.match(/filename="?(.+)"?/);
-        if (filenameMatch) {
-          filename = filenameMatch[1];
-        }
-      }
 
       // Create download link
       const url = window.URL.createObjectURL(new Blob([response.data]));
@@ -160,6 +161,7 @@ function SearchPage() {
       document.body.appendChild(link);
       link.click();
       link.remove();
+      window.URL.revokeObjectURL(url);
 
       setMessage(`Exported ${selectedSlides.size} slides successfully!`);
       setSelectedSlides(new Set());

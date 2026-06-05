@@ -176,11 +176,15 @@ async def export_slides(
         
         prs.save(temp_file.name)
         
-        # Return the file
+        # Return the file with proper headers
+        headers = {
+            'Content-Disposition': f'attachment; filename="{download_filename}"'
+        }
         return FileResponse(
             path=temp_file.name,
             media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
             filename=download_filename,
+            headers=headers,
             background=None  # File will be deleted after sending
         )
         
