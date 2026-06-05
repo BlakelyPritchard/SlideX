@@ -13,6 +13,7 @@ function SearchPage() {
   const [selectedSlides, setSelectedSlides] = useState(new Set());
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState('');
+  const [exportFilename, setExportFilename] = useState('');
 
   // Fetch all slides on component mount
   useEffect(() => {
@@ -126,23 +127,43 @@ function SearchPage() {
     }
 
     try {
+      const requestBody = {
+        slide_ids: Array.from(selectedSlides)
+      };
+      
+      // Add filename if provided
+      if (exportFilename.trim()) {
+        requestBody.filename = exportFilename.trim();
+      }
+
       const response = await axios.post(
         `${API_URL}/api/search/export`,
-        { slide_ids: Array.from(selectedSlides) },
+        requestBody,
         { responseType: 'blob' }
       );
+
+      // Get filename from Content-Disposition header or use default
+      const contentDisposition = response.headers['content-disposition'];
+      let filename = 'selected_slides.pptx';
+      if (contentDisposition) {
+        const filenameMatch = contentDisposition.match(/filename="?(.+)"?/);
+        if (filenameMatch) {
+          filename = filenameMatch[1];
+        }
+      }
 
       // Create download link
       const url = window.URL.createObjectURL(new Blob([response.data]));
       const link = document.createElement('a');
       link.href = url;
-      link.setAttribute('download', 'selected_slides.pptx');
+      link.setAttribute('download', filename);
       document.body.appendChild(link);
       link.click();
       link.remove();
 
       setMessage(`Exported ${selectedSlides.size} slides successfully!`);
       setSelectedSlides(new Set());
+      setExportFilename(''); // Clear filename after export
     } catch (error) {
       console.error('Export error:', error);
       setMessage('Error exporting slides');
@@ -153,6 +174,7 @@ function SearchPage() {
     setSearchQuery('');
     setSelectedTags({});
     setSelectedSlides(new Set());
+    setExportFilename('');
   };
 
   if (loading) {
@@ -225,9 +247,18 @@ function SearchPage() {
             </button>
           )}
           {selectedSlides.size > 0 && (
-            <button onClick={handleExport} className="export-button">
-              Export Selected ({selectedSlides.size})
-            </button>
+            <>
+              <input
+                type="text"
+                placeholder="Filename (optional)"
+                value={exportFilename}
+                onChange={(e) => setExportFilename(e.target.value)}
+                className="filename-input"
+              />
+              <button onClick={handleExport} className="export-button">
+                Export Selected ({selectedSlides.size})
+              </button>
+            </>
           )}
         </div>
       </div>

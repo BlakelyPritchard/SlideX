@@ -11,6 +11,7 @@ from pptx import Presentation
 from pptx.util import Inches
 from PIL import Image
 import os
+import re
 import tempfile
 from datetime import datetime
 
@@ -23,6 +24,7 @@ router = APIRouter()
 
 class ExportRequest(BaseModel):
     slide_ids: List[int]
+    filename: Optional[str] = None  # Optional custom filename
 
 
 @router.get("/")
@@ -152,12 +154,23 @@ async def export_slides(
                 height=final_height
             )
         
+        # Determine filename
+        if request.filename:
+            # Sanitize the filename to remove invalid characters
+            safe_filename = re.sub(r'[<>:"/\\|?*]', '_', request.filename)
+            # Ensure it ends with .pptx
+            if not safe_filename.lower().endswith('.pptx'):
+                safe_filename += '.pptx'
+            download_filename = safe_filename
+        else:
+            # Use default timestamped filename
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            download_filename = f"slidex_export_{timestamp}.pptx"
+        
         # Save to temporary file
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         temp_file = tempfile.NamedTemporaryFile(
             delete=False,
-            suffix=f"_export_{timestamp}.pptx",
-            prefix="slidex_"
+            suffix=".pptx"
         )
         temp_file.close()
         
@@ -167,7 +180,7 @@ async def export_slides(
         return FileResponse(
             path=temp_file.name,
             media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
-            filename=f"slidex_export_{timestamp}.pptx",
+            filename=download_filename,
             background=None  # File will be deleted after sending
         )
         
