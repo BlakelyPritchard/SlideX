@@ -75,11 +75,11 @@ venv\Scripts\activate  # Windows
 
 # Install Ollama and PaddleOCR
 pip install ollama==0.1.6
-pip install paddleocr==2.7.0.3
-pip install paddlepaddle==2.6.0
+pip install paddleocr==2.7.3
+pip install paddlepaddle==3.0.0
 
 # If you have NVIDIA GPU, install GPU version instead:
-# pip install paddlepaddle-gpu==2.6.0
+# pip install paddlepaddle-gpu==3.0.0
 ```
 
 ### Step 5: Configure SlideX

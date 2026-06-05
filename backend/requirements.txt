@@ -20,8 +20,8 @@ anthropic==0.7.7
 
 # Open-source AI (Ollama + OCR)
 ollama==0.1.6
-paddleocr==2.7.0.3
-paddlepaddle==2.6.0
+paddleocr==2.7.3
+paddlepaddle==3.0.0  # Compatible with Python 3.9+
 
 # Utilities
 python-dotenv==1.0.0
