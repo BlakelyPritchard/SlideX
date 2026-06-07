@@ -172,6 +172,56 @@ function SearchPage() {
     }
   };
 
+  const handleDelete = async (slideId) => {
+    try {
+      await axios.delete(`${API_URL}/api/slides/${slideId}`);
+      
+      // Remove from selected slides if it was selected
+      setSelectedSlides(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(slideId);
+        return newSet;
+      });
+      
+      // Refresh slides list
+      await fetchSlides();
+      
+      setMessage('Slide deleted successfully');
+      setTimeout(() => setMessage(''), 3000);
+    } catch (error) {
+      console.error('Delete error:', error);
+      setMessage('Error deleting slide');
+      setTimeout(() => setMessage(''), 3000);
+    }
+  };
+
+  const [showBatchDeleteConfirm, setShowBatchDeleteConfirm] = useState(false);
+
+  const handleBatchDelete = async () => {
+    try {
+      const slideIds = Array.from(selectedSlides);
+      await axios({
+        method: 'delete',
+        url: `${API_URL}/api/slides/batch`,
+        data: { slide_ids: slideIds }
+      });
+      
+      // Clear selected slides
+      setSelectedSlides(new Set());
+      
+      // Refresh slides list
+      await fetchSlides();
+      
+      setMessage(`${slideIds.length} slide(s) deleted successfully`);
+      setTimeout(() => setMessage(''), 3000);
+      setShowBatchDeleteConfirm(false);
+    } catch (error) {
+      console.error('Batch delete error:', error);
+      setMessage('Error deleting slides');
+      setTimeout(() => setMessage(''), 3000);
+    }
+  };
+
   const clearFilters = () => {
     setSearchQuery('');
     setSelectedTags({});
@@ -250,6 +300,12 @@ function SearchPage() {
           )}
           {selectedSlides.size > 0 && (
             <>
+              <button
+                onClick={() => setShowBatchDeleteConfirm(true)}
+                className="delete-selected-button"
+              >
+                Delete Selected ({selectedSlides.size})
+              </button>
               <input
                 type="text"
                 placeholder="Filename (optional)"
@@ -286,8 +342,38 @@ function SearchPage() {
               slide={slide}
               isSelected={selectedSlides.has(slide.id)}
               onSelect={handleSlideSelect}
+              onDelete={handleDelete}
             />
           ))}
+        </div>
+      )}
+
+      {/* Batch Delete Confirmation Modal */}
+      {showBatchDeleteConfirm && (
+        <div className="delete-confirm-modal" onClick={() => setShowBatchDeleteConfirm(false)}>
+          <div className="delete-confirm-content" onClick={(e) => e.stopPropagation()}>
+            <h3>Delete Selected Slides?</h3>
+            <p className="delete-warning">
+              You are about to delete <strong>{selectedSlides.size}</strong> slide(s).
+            </p>
+            <p className="delete-note">
+              This action cannot be undone. The slides will be permanently removed from the database and file system.
+            </p>
+            <div className="delete-actions">
+              <button
+                onClick={() => setShowBatchDeleteConfirm(false)}
+                className="cancel-button"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleBatchDelete}
+                className="confirm-delete-button"
+              >
+                Delete {selectedSlides.size} Slide(s)
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

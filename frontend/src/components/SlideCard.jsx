@@ -2,8 +2,9 @@ import { useState } from 'react';
 
 const API_URL = 'http://localhost:8000';
 
-function SlideCard({ slide, isSelected, onSelect }) {
+function SlideCard({ slide, isSelected, onSelect, onDelete }) {
   const [showPreview, setShowPreview] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const getThumbnailUrl = () => {
     // Backend serves static files from the thumbnails directory
@@ -48,6 +49,18 @@ function SlideCard({ slide, isSelected, onSelect }) {
             onClick={(e) => e.stopPropagation()}
           />
         </div>
+
+        {/* Delete Button */}
+        <button
+          className="slide-delete-button"
+          onClick={(e) => {
+            e.stopPropagation();
+            setShowDeleteConfirm(true);
+          }}
+          title="Delete slide"
+        >
+          🗑️
+        </button>
 
         {/* Thumbnail */}
         <div 
@@ -154,7 +167,51 @@ function SlideCard({ slide, isSelected, onSelect }) {
                 >
                   {isSelected ? 'Deselect' : 'Select'} this slide
                 </button>
+
+                <button
+                  className="delete-button-modal"
+                  onClick={() => {
+                    setShowPreview(false);
+                    setShowDeleteConfirm(true);
+                  }}
+                >
+                  Delete this slide
+                </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteConfirm && (
+        <div className="modal-overlay" onClick={() => setShowDeleteConfirm(false)}>
+          <div className="modal-content delete-confirm-modal" onClick={(e) => e.stopPropagation()}>
+            <h3>Delete Slide?</h3>
+            <p>Are you sure you want to delete this slide?</p>
+            <p className="delete-warning">
+              <strong>{slide.title || `Slide ${slide.slide_number}`}</strong>
+              <br />
+              {slide.original_filename}
+            </p>
+            <p className="delete-note">This action cannot be undone.</p>
+            
+            <div className="modal-actions">
+              <button
+                className="cancel-button"
+                onClick={() => setShowDeleteConfirm(false)}
+              >
+                Cancel
+              </button>
+              <button
+                className="confirm-delete-button"
+                onClick={() => {
+                  onDelete(slide.id);
+                  setShowDeleteConfirm(false);
+                }}
+              >
+                Delete
+              </button>
             </div>
           </div>
         </div>

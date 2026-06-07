@@ -1,17 +1,31 @@
 """
 Slides API endpoints
 """
-from fastapi import APIRouter, UploadFile, File, Depends, HTTPException
+from fastapi import APIRouter, UploadFile, File, Depends, HTTPException, Body
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from typing import List
+from pydantic import BaseModel
 import os
+import shutil
 
 from app.core.database import get_db
 from app.models.slide import Slide
 from app.services.slide_processor import SlideProcessor
 from app.services.ai_tagger import AITagger
+from pptx import Presentation
+from pptx.util import Inches
 
 router = APIRouter()
+
+
+class ExportRequest(BaseModel):
+    slide_ids: List[int]
+    filename: str = "exported_slides.pptx"
+
+
+class DeleteBatchRequest(BaseModel):
+    slide_ids: List[int]
 
 
 @router.post("/upload")
@@ -83,8 +97,15 @@ async def upload_presentation(
                 image_path=slide_data["image_path"]
             )
             
-            # Link tags to slide
+            # Link tags to slide (deduplicate to avoid constraint violations)
+            unique_tags = []
+            seen_tag_ids = set()
             for tag in tags:
+                if tag.id not in seen_tag_ids:
+                    unique_tags.append(tag)
+                    seen_tag_ids.add(tag.id)
+            
+            for tag in unique_tags:
                 slide.tags.append(tag)
             
             db.commit()  # Commit the tag relationships
@@ -150,6 +171,62 @@ async def get_slide(slide_id: int, db: Session = Depends(get_db)):
         "tags": [{"id": tag.id, "name": tag.name, "category": tag.category} for tag in slide.tags],
         "created_at": slide.created_at
     }
+
+
+
+
+@router.delete("/batch")
+async def delete_slides_batch(
+    request: DeleteBatchRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Delete multiple slides at once
+    - Accepts list of slide IDs
+    - Removes all from database
+    - Deletes all associated files
+    """
+    if not request.slide_ids:
+        raise HTTPException(status_code=400, detail="No slide IDs provided")
+    
+    slides = db.query(Slide).filter(Slide.id.in_(request.slide_ids)).all()
+    
+    if not slides:
+        raise HTTPException(status_code=404, detail="No slides found with provided IDs")
+    
+    deleted_count = 0
+    deleted_files = []
+    
+    try:
+        for slide in slides:
+            # Store file paths
+            image_path = slide.image_path
+            thumbnail_path = slide.thumbnail_path
+            
+            # Delete from database
+            db.delete(slide)
+            deleted_count += 1
+            
+            # Delete files
+            if image_path and os.path.exists(image_path):
+                os.remove(image_path)
+                deleted_files.append(image_path)
+            
+            if thumbnail_path and os.path.exists(thumbnail_path):
+                os.remove(thumbnail_path)
+                deleted_files.append(thumbnail_path)
+        
+        db.commit()
+        
+        return {
+            "message": f"Successfully deleted {deleted_count} slides",
+            "deleted_count": deleted_count,
+            "deleted_files_count": len(deleted_files)
+        }
+    
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error deleting slides: {str(e)}")
 
 
 @router.delete("/{slide_id}")

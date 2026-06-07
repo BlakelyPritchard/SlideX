@@ -139,11 +139,19 @@ Slide Content:
 Provide tags in these categories:
 1. client_painpoint: What business problems does this address? (e.g., "data security", "scalability", "cost reduction")
 2. client_type: What type of organization is this for? (e.g., "enterprise", "SMB", "startup")
-3. software_type: What category of software? (e.g., "CRM", "analytics", "automation")
-4. software_function: What specific capabilities? (e.g., "reporting", "integration", "dashboard")
+3. software_type: What category of software? Use these IBM product names when relevant:
+   - Maximo (for asset management, maintenance, monitoring, mobile, visual inspection, service)
+   - Tririga (for space management, capital planning, lease management)
+   - Verify (for IAM, authentication, risk, delegation, consent, continuous audit)
+   - Other: CRM, ERP, analytics, automation
+4. software_function: What specific capabilities? Match to products:
+   - Maximo: asset_management, mobile, maintenance, monitoring, visual_inspection, service
+   - Verify: IAM, authentication, risk, delegation, consent, continuous_audit
+   - Tririga: space_management, capital_planning, lease_management
+   - General: reporting, integration, dashboard, analysis
 
 Return ONLY a JSON object with these category keys and arrays of tag strings. Keep tags concise (1-3 words).
-Example: {{"client_painpoint": ["data security"], "client_type": ["enterprise"], "software_type": ["CRM"], "software_function": ["reporting"]}}
+Example: {{"client_painpoint": ["data security"], "client_type": ["enterprise"], "software_type": ["Maximo"], "software_function": ["asset_management", "monitoring"]}}
 """
             
             response = client.chat.completions.create(
@@ -176,8 +184,16 @@ Slide Content:
 Provide tags in these categories:
 1. client_painpoint: What business problems does this address?
 2. client_type: What type of organization is this for?
-3. software_type: What category of software?
-4. software_function: What specific capabilities?
+3. software_type: What category of software? Use these IBM product names when relevant:
+   - Maximo (for asset management, maintenance, monitoring, mobile, visual inspection, service)
+   - Tririga (for space management, capital planning, lease management)
+   - Verify (for IAM, authentication, risk, delegation, consent, continuous audit)
+   - Other: CRM, ERP, analytics, automation
+4. software_function: What specific capabilities? Match to products:
+   - Maximo: asset_management, mobile, maintenance, monitoring, visual_inspection, service
+   - Verify: IAM, authentication, risk, delegation, consent, continuous_audit
+   - Tririga: space_management, capital_planning, lease_management
+   - General: reporting, integration, dashboard, analysis
 
 Return ONLY a JSON object with these category keys and arrays of tag strings.
 """
@@ -208,8 +224,16 @@ Slide Content:
 Provide tags in these categories:
 1. client_painpoint: What business problems does this address?
 2. client_type: What type of organization is this for?
-3. software_type: What category of software?
-4. software_function: What specific capabilities?
+3. software_type: What category of software? Use these IBM product names when relevant:
+   - Maximo (for asset management, maintenance, monitoring, mobile, visual inspection, service)
+   - Tririga (for space management, capital planning, lease management)
+   - Verify (for IAM, authentication, risk, delegation, consent, continuous audit)
+   - Other: CRM, ERP, analytics, automation
+4. software_function: What specific capabilities? Match to products:
+   - Maximo: asset_management, mobile, maintenance, monitoring, visual_inspection, service
+   - Verify: IAM, authentication, risk, delegation, consent, continuous_audit
+   - Tririga: space_management, capital_planning, lease_management
+   - General: reporting, integration, dashboard, analysis
 
 Return ONLY a JSON object with these category keys and arrays of tag strings.
 """
@@ -291,13 +315,21 @@ Return ONLY a JSON object with these category keys and arrays of tag strings.
             # Get access token (automatically refreshes if needed)
             access_token = await self._get_watsonx_token()
             
-            # Optimized prompt for Llama-3.3-70B
+            # Optimized prompt for Llama-3.3-70B with product-specific keywords
             system_prompt = """You are an expert at categorizing presentation slides for a sales team. Analyze slides and assign specific, relevant tags in 5 categories:
 
 1. client_painpoint: Business problems addressed (e.g., cost_reduction, data_security, identity_management, compliance, scalability, integration_challenges)
 2. client_type: Target organization type (e.g., enterprise, SMB, government, healthcare, financial_services, manufacturing)
-3. software_type: Software category (e.g., Maximo, Tririga, Verify, Value360, CRM, ERP, analytics, automation)
-4. software_function: Specific capabilities (e.g., asset_management, facility_management, identity_verification, reporting, monitoring, integration, dashboard)
+3. software_type: Software category - Use these IBM product names when relevant:
+   - Maximo (for asset management, maintenance, monitoring, mobile, visual inspection, service)
+   - Tririga (for space management, capital planning, lease management)
+   - Verify (for IAM, authentication, risk, delegation, consent, continuous audit)
+   - Other: CRM, ERP, analytics, automation
+4. software_function: Specific capabilities - Match to products:
+   - Maximo: asset_management, mobile, maintenance, monitoring, visual_inspection, service
+   - Verify: IAM, authentication, risk, delegation, consent, continuous_audit
+   - Tririga: space_management, capital_planning, lease_management
+   - General: reporting, integration, dashboard, analysis
 5. slide_type: Presentation structure (e.g., title_slide, agenda, content, feature_highlight, demo, case_study, closing_slide)
 
 Return ONLY valid JSON with these exact category keys and arrays of concise tag strings (1-3 words each)."""
@@ -387,13 +419,21 @@ Return JSON format:
             if ocr_text:
                 enhanced_content = f"{content}\n\nOCR Extracted Text:\n{ocr_text}"
             
-            # Step 3: Prepare prompt for LLaVA
+            # Step 3: Prepare prompt for LLaVA with product-specific keywords
             system_prompt = """You are an expert at categorizing presentation slides for a sales team. Analyze slides and assign specific, relevant tags in 5 categories:
 
 1. client_painpoint: Business problems addressed (e.g., cost_reduction, data_security, identity_management, compliance, scalability, integration_challenges)
 2. client_type: Target organization type (e.g., enterprise, SMB, government, healthcare, financial_services, manufacturing)
-3. software_type: Software category (e.g., Maximo, Tririga, Verify, Value360, CRM, ERP, analytics, automation)
-4. software_function: Specific capabilities (e.g., asset_management, facility_management, identity_verification, reporting, monitoring, integration, dashboard)
+3. software_type: Software category - Use these IBM product names when relevant:
+   - Maximo (for asset management, maintenance, monitoring, mobile, visual inspection, service)
+   - Tririga (for space management, capital planning, lease management)
+   - Verify (for IAM, authentication, risk, delegation, consent, continuous audit)
+   - Other: CRM, ERP, analytics, automation
+4. software_function: Specific capabilities - Match to products:
+   - Maximo: asset_management, mobile, maintenance, monitoring, visual_inspection, service
+   - Verify: IAM, authentication, risk, delegation, consent, continuous_audit
+   - Tririga: space_management, capital_planning, lease_management
+   - General: reporting, integration, dashboard, analysis
 5. slide_type: Presentation structure (e.g., title_slide, agenda, content, feature_highlight, demo, case_study, closing_slide)
 
 Return ONLY valid JSON with these exact category keys and arrays of concise tag strings (1-3 words each)."""
@@ -518,7 +558,7 @@ Return JSON format:
             "startup": "startup"
         }
         
-        # IBM Software Products
+        # IBM Software Products with specific keywords
         software_keywords = {
             "maximo": "Maximo",
             "tririga": "Tririga",
@@ -527,7 +567,20 @@ Return JSON format:
             "crm": "CRM",
             "analytics": "analytics",
             "automation": "automation",
-            "dashboard": "dashboard"
+            "dashboard": "dashboard",
+            # Maximo-specific
+            "asset": "Maximo",
+            "maintenance": "Maximo",
+            "mobile": "Maximo",
+            "visual inspection": "Maximo",
+            # Tririga-specific
+            "space management": "Tririga",
+            "capital planning": "Tririga",
+            "lease": "Tririga",
+            # Verify-specific
+            "iam": "Verify",
+            "authentication": "Verify",
+            "identity": "Verify"
         }
         
         function_keywords = {
@@ -535,7 +588,30 @@ Return JSON format:
             "integrate": "integration",
             "dashboard": "dashboard",
             "analyze": "analysis",
-            "monitor": "monitoring"
+            "monitor": "monitoring",
+            # Maximo functions
+            "asset management": "asset_management",
+            "asset_management": "asset_management",
+            "mobile": "mobile",
+            "maintenance": "maintenance",
+            "visual inspection": "visual_inspection",
+            "visual_inspection": "visual_inspection",
+            "service": "service",
+            # Verify functions
+            "iam": "IAM",
+            "authentication": "authentication",
+            "risk": "risk",
+            "delegation": "delegation",
+            "consent": "consent",
+            "continuous audit": "continuous_audit",
+            "continuous_audit": "continuous_audit",
+            # Tririga functions
+            "space management": "space_management",
+            "space_management": "space_management",
+            "capital planning": "capital_planning",
+            "capital_planning": "capital_planning",
+            "lease management": "lease_management",
+            "lease_management": "lease_management"
         }
         
         # Match keywords
