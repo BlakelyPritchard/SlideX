@@ -9,7 +9,7 @@ import os
 
 from app.core.config import settings
 from app.core.database import init_db
-from app.api import slides, tags, search
+from app.api import slides, tags, search, deck_generation
 
 # Create FastAPI app
 app = FastAPI(
@@ -40,6 +40,7 @@ app.mount("/thumbnails", StaticFiles(directory=settings.THUMBNAILS_DIR), name="t
 app.include_router(slides.router, prefix="/api/slides", tags=["slides"])
 app.include_router(tags.router, prefix="/api/tags", tags=["tags"])
 app.include_router(search.router, prefix="/api/search", tags=["search"])
+app.include_router(deck_generation.router, prefix="/api/deck-generation", tags=["deck-generation"])
 
 
 @app.on_event("startup")

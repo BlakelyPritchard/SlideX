@@ -644,4 +644,160 @@ Return JSON format:
         
         return tags
 
+
+    def generate_text(self, prompt: str, max_tokens: int = 500) -> str:
+        """
+        Generate text using the configured AI provider
+        
+        Args:
+            prompt: The prompt to send to the AI
+            max_tokens: Maximum tokens to generate
+            
+        Returns:
+            Generated text response
+        """
+        try:
+            # Try WatsonX first if configured
+            if self.watsonx_project_id:
+                return self._generate_with_watsonx(prompt, max_tokens)
+            
+            # Try OpenAI if configured
+            if self.openai_key:
+                return self._generate_with_openai(prompt, max_tokens)
+            
+            # Try Anthropic if configured
+            if self.anthropic_key:
+                return self._generate_with_anthropic(prompt, max_tokens)
+            
+            # Try Ollama if configured
+            if self.use_ollama:
+                return self._generate_with_ollama(prompt, max_tokens)
+            
+            # Try Roo if configured
+            if self.roo_key:
+                return self._generate_with_roo(prompt, max_tokens)
+            
+            raise Exception("No AI provider configured")
+            
+        except Exception as e:
+            print(f"Error generating text: {e}")
+            return ""
+    
+    def _generate_with_watsonx(self, prompt: str, max_tokens: int) -> str:
+        """Generate text using WatsonX"""
+        import requests
+        
+        token = self._get_watsonx_token()
+        if not token:
+            raise Exception("Failed to get WatsonX token")
+        
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+            "Accept": "application/json"
+        }
+        
+        data = {
+            "input": prompt,
+            "parameters": {
+                "max_new_tokens": max_tokens,
+                "temperature": 0.7
+            },
+            "model_id": "ibm/granite-13b-chat-v2",
+            "project_id": self.watsonx_project_id
+        }
+        
+        response = requests.post(
+            f"{self.watsonx_url}/ml/v1/text/generation?version=2023-05-29",
+            headers=headers,
+            json=data,
+            timeout=30
+        )
+        
+        if response.status_code == 200:
+            result = response.json()
+            return result.get("results", [{}])[0].get("generated_text", "")
+        else:
+            raise Exception(f"WatsonX API error: {response.status_code}")
+    
+    def _generate_with_openai(self, prompt: str, max_tokens: int) -> str:
+        """Generate text using OpenAI"""
+        import openai
+        
+        client = openai.OpenAI(api_key=self.openai_key)
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=max_tokens,
+            temperature=0.7
+        )
+        return response.choices[0].message.content
+    
+    def _generate_with_anthropic(self, prompt: str, max_tokens: int) -> str:
+        """Generate text using Anthropic"""
+        import anthropic
+        
+        client = anthropic.Anthropic(api_key=self.anthropic_key)
+        message = client.messages.create(
+            model="claude-3-5-sonnet-20241022",
+            max_tokens=max_tokens,
+            messages=[{"role": "user", "content": prompt}]
+        )
+        return message.content[0].text
+    
+    def _generate_with_ollama(self, prompt: str, max_tokens: int) -> str:
+        """Generate text using Ollama"""
+        import ollama
+        
+        response = ollama.chat(
+            model=self.ollama_model,
+            messages=[{"role": "user", "content": prompt}],
+            options={"num_predict": max_tokens}
+        )
+        return response['message']['content']
+    
+    def _generate_with_roo(self, prompt: str, max_tokens: int) -> str:
+        """Generate text using Roo"""
+        import requests
+        
+        headers = {
+            "Authorization": f"Bearer {self.roo_key}",
+            "Content-Type": "application/json"
+        }
+        
+        data = {
+            "prompt": prompt,
+            "max_tokens": max_tokens,
+            "temperature": 0.7
+        }
+        
+        response = requests.post(
+            f"{self.roo_url}/generate",
+            headers=headers,
+            json=data,
+            timeout=30
+        )
+        
+        if response.status_code == 200:
+            return response.json().get("text", "")
+        else:
+            raise Exception(f"Roo API error: {response.status_code}")
+
+
+# Global instance
+_ai_tagger_instance = None
+
+
+def get_ai_provider() -> AITagger:
+    """
+    Get or create the global AITagger instance
+    
+    Returns:
+        AITagger instance
+    """
+    global _ai_tagger_instance
+    if _ai_tagger_instance is None:
+        _ai_tagger_instance = AITagger()
+    return _ai_tagger_instance
+
 # Made with Bob

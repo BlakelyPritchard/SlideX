@@ -175,6 +175,19 @@ async def get_slide(slide_id: int, db: Session = Depends(get_db)):
 
 
 
+@router.get("/{slide_id}/image")
+async def get_slide_image(slide_id: int, db: Session = Depends(get_db)):
+    """Get the image file for a specific slide"""
+    slide = db.query(Slide).filter(Slide.id == slide_id).first()
+    if not slide:
+        raise HTTPException(status_code=404, detail="Slide not found")
+    
+    if not slide.image_path or not os.path.exists(slide.image_path):
+        raise HTTPException(status_code=404, detail="Image file not found")
+    
+    return FileResponse(slide.image_path, media_type="image/png")
+
+
 @router.delete("/batch")
 async def delete_slides_batch(
     request: DeleteBatchRequest,

@@ -2,6 +2,7 @@ import { BrowserRouter as Router, Routes, Route, Link } from 'react-router-dom';
 import { useState } from 'react';
 import UploadPage from './components/UploadPage';
 import SearchPage from './components/SearchPage';
+import AskPage from './components/AskPage';
 import './App.css';
 
 function App() {
@@ -14,6 +15,7 @@ function App() {
             <div className="nav-links">
               <Link to="/" className="nav-link">Search</Link>
               <Link to="/upload" className="nav-link">Upload</Link>
+              <Link to="/ask" className="nav-link">Ask AI</Link>
             </div>
           </div>
         </nav>
@@ -22,6 +24,7 @@ function App() {
           <Routes>
             <Route path="/" element={<SearchPage />} />
             <Route path="/upload" element={<UploadPage />} />
+            <Route path="/ask" element={<AskPage />} />
           </Routes>
         </main>
       </div>
